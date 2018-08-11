@@ -3,10 +3,65 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torch import optim as optim
-import AlexNet
+import math
+
+class VGGNet(torch.nn.Module):
+	def __init__(self):
+		super(VGGNet,self).__init__()
+		self.conv_and_pool = torch.nn.Sequential(
+			torch.nn.Conv2d(3,64,kernel_size=3,padding=1),
+			torch.nn.ReLU(inplace=True),
+			torch.nn.MaxPool2d(kernel_size=2,stride=2),
+			torch.nn.Conv2d(64,128,kernel_size=3,padding=1),
+			torch.nn.ReLU(inplace=True),
+			torch.nn.MaxPool2d(kernel_size=2,stride=2),
+			torch.nn.Conv2d(128,256,kernel_size=3,padding=1),
+			torch.nn.ReLU(inplace=True),
+			torch.nn.Conv2d(256,256,kernel_size=3,padding=1),
+			torch.nn.ReLU(inplace=True),
+			torch.nn.MaxPool2d(kernel_size=2,stride=2),
+			torch.nn.Conv2d(256,512,kernel_size=3,padding=1),
+			torch.nn.ReLU(inplace=True),
+			torch.nn.Conv2d(512,512,kernel_size=3,padding=1),
+			torch.nn.ReLU(inplace=True),
+			torch.nn.MaxPool2d(kernel_size=2,stride=2),
+			torch.nn.Conv2d(512,512,kernel_size=3,padding=1),
+			torch.nn.ReLU(inplace=True),
+			torch.nn.Conv2d(512,512,kernel_size=3,padding=1),
+			torch.nn.ReLU(inplace=True),
+			torch.nn.MaxPool2d(kernel_size=2,stride=2),
+			)
+		self.fc = torch.nn.Sequential(
+			torch.nn.Dropout(),
+			torch.nn.Linear(512,512),
+			torch.nn.ReLU(True),
+			torch.nn.Dropout(),
+			torch.nn.Linear(512,512),
+			torch.nn.ReLU(True),
+			torch.nn.Dropout(0.5),
+			torch.nn.Linear(512,10),
+			)
+		for m in self.modules():
+			if isinstance(m, torch.nn.Conv2d):
+				n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+				m.weight.data.normal_(0, math.sqrt(2. / n))
+				m.bias.data.zero_()
+	def forward(self,input):
+		output = self.conv_and_pool(input)
+		output = output.view(output.size(0),-1)
+		output = self.fc(output)
+		return output
 
 def train(model, data, target, loss_func, optimizer):
-
+    """
+    train step, input a batch data, return accuracy and loss
+    :param model: network model object
+    :param data: input data, shape: (batch_size, 28, 28, 1)
+    :param target: input labels, shape: (batch_size, 1)
+    :param loss_func: the loss function you use
+    :param optimizer: the optimizer you use
+    :return: accuracy, loss
+    """
     model.train()
     # initial optimizer
     optimizer.zero_grad()
@@ -36,7 +91,14 @@ def train(model, data, target, loss_func, optimizer):
 
 
 def test(model, test_loader, loss_func, use_cuda):
-
+    """
+    use a test set to test model
+    NOTE: test step will not change network weights, so we don't use backward and optimizer
+    :param model: net object
+    :param test_loader: type: torch.utils.data.Dataloader
+    :param loss_func: loss function
+    :return: accuracy, loss
+    """
     model.eval()
     acc_all = 0
     loss_all = 0
@@ -58,12 +120,16 @@ def test(model, test_loader, loss_func, use_cuda):
 
 
 def main():
+    """
+    main function
+    """
 
+    # define some hyper parameters
     num_classes = 10
     eval_step = 1000
     num_epochs = 100
     batch_size = 64
-    model_name = 'resnet' # resnet, vgg
+    model_name = 'vgg' # resnet, vgg
 
     # first check directories, if not exist, create
     dir_list = ('../data', '../data/MNIST', '../data/CIFAR-10')
@@ -93,18 +159,16 @@ def main():
         batch_size=batch_size
     )
 
-
-
     # define network
-    model = AlexNet.AlexNet()
+    model = VGGNet()
     if use_cuda:
         model = model.cuda()
-
+    print(model)
     # define loss function
     ce_loss = torch.nn.CrossEntropyLoss()
 
     # define optimizer
-    optimizer = optim.SGD(model.parameters(), lr=0.01)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     # start train
     train_step = 0
