@@ -6,78 +6,62 @@ from torch import optim as optim
 import visdom
 import numpy as np
 class BasicBlock(torch.nn.Module):
-	def __init__(self,in_channel,out_channels,stride=1):
-		super(BasicBlock,self).__init__()
-		self.residual = torch.nn.Sequential(
-			torch.nn.Conv2d(in_channel,out_channels,kernel_size=3,stride=stride,padding=1,bias=False),
-			torch.nn.BatchNorm2d(out_channels),
-			torch.nn.ReLU(inplace=True),
-			torch.nn.Conv2d(out_channels,out_channels,kernel_size=3,stride=1,padding=1,bias=False),
-			torch.nn.BatchNorm2d(out_channels))
-		self.shortCut = torch.nn.Sequential()
-		if stride != 1 or in_channel != out_channels:
-			self.shortCut = torch.nn.Sequential(
-				torch.nn.Conv2d(in_channel,out_channels,kernel_size=1,stride=stride,bias=False),
-				torch.nn.BatchNorm2d(out_channels))
-		if out_channels == 64:
-			self.avgpool2d = torch.nn.AvgPool2d(32,stride=1)
-		elif out_channels == 128:
-			self.avgpool2d = torch.nn.AvgPool2d(16,stride=1) 
-		elif out_channels == 256:
-			self.avgpool2d = torch.nn.AvgPool2d(8,stride=1)
-		elif out_channels == 512:
-			self.avgpool2d = torch.nn.AvgPool2d(4,stride=1)
-		self.fc1 = torch.nn.Linear(out_channels,out_channels//16)
-		self.relu1 = torch.nn.ReLU()
-		self.fc2 = torch.nn.Linear(out_channels//16,out_channels)
-		self.sigmoid = torch.nn.Sigmoid()
+    expansion = 4
+    def __init__(self,in_channels,channels,stride=1):
+        super(BasicBlock,self).__init__()
+        self.residual = torch.nn.Sequential(
+            torch.nn.BatchNorm2d(in_channels),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(in_channels,channels,kernel_size=1,stride=1,padding=0,bias=False),
+            torch.nn.BatchNorm2d(channels),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(channels,channels,kernel_size=3,stride=stride,padding=1,bias=False),
+            torch.nn.BatchNorm2d(channels),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(channels,channels*self.expansion,kernel_size=1,stride=1,bias=False)
+            )
+        if in_channels != channels*self.expansion or stride != 1:
+            self.shortCut = torch.nn.Sequential(
+                torch.nn.Conv2d(in_channels,channels*self.expansion,kernel_size=1,stride=stride,bias=False)
+                )
+        else:
+            self.shortCut = torch.nn.Sequential()
+    def forward(self,input):
+        short_cut = self.shortCut(input)
+        output = self.residual(input)
+        output += short_cut
+        return output
+class ResNet(torch.nn.Module):
+    def __init__(self,block,num_blocks,filter,num_classes = 100):
+        super(ResNet,self).__init__()
+        self.in_channels = 16
+        self.conv1 = torch.nn.Conv2d(3,16,kernel_size=3,stride=1,padding=1,bias=False)
+        self.layer1 = self.make_layer(BasicBlock,num_blocks[0],filter[0],stride=1)
+        self.layer2 = self.make_layer(BasicBlock,num_blocks[1],filter[1],stride=2)
+        self.layer3 = self.make_layer(BasicBlock,num_blocks[2],filter[2],stride=2)
+        self.bn = torch.nn.BatchNorm2d(filter[2]*block.expansion)
+        self.fc = torch.nn.Linear(filter[2]*block.expansion,num_classes,bias=True)
+    def make_layer(self,block,num_blocks,channels,stride):
+        strides = [stride] + [1]*(num_blocks-1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_channels,channels,stride))
+            self.in_channels = channels*block.expansion
+        return torch.nn.Sequential(*layers)
+    def forward(self,input):
+        output = self.conv1(input)
+        output = self.layer1(output)
+        output = self.layer2(output)
+        output = self.layer3(output)
+        output = torch.nn.functional.relu(self.bn(output))
+        output = torch.nn.functional.avg_pool2d(output,8)
+        output = output.view(output.size(0),-1)
+        output = self.fc(output)
+        return output
 
-	def forward(self,input):
-		residual = self.residual(input)
-		shortCut = self.shortCut(input)
-		se = self.avgpool2d(residual)
-		se = se.view(se.size(0),-1)
-		se = self.fc1(se)
-		se = self.relu1(se)
-		se = self.fc2(se)
-		se = self.sigmoid(se)
-		se = se.view(se.size(0),se.size(1),1,1)
-		out = se*residual
-		out += shortCut
-		out = torch.nn.functional.relu(out)
-		return out
-class RESNet(torch.nn.Module):
-	def __init__(self,BasicBlock):
-		super(RESNet,self).__init__()
-		self.in_channel = 64
-		self.conv1 = torch.nn.Sequential(
-			torch.nn.Conv2d(3,64,kernel_size=3,stride=1,padding=1,bias=False),
-			torch.nn.BatchNorm2d(64),
-			torch.nn.ReLU())
-		self.layer1 = self.make_layer(BasicBlock,64,2,stride=1)
-		self.layer2 = self.make_layer(BasicBlock,128,2,stride=2)
-		self.layer3 = self.make_layer(BasicBlock,256,2,stride=2)
-		self.layer4 = self.make_layer(BasicBlock,512,2,stride=2)
-		self.fc = torch.nn.Linear(512,100)
-	def make_layer(self,block,channels,num_blocks,stride):
-		strides = [stride] + [1]*(num_blocks-1)
-		layers = []
-		for stride in strides:
-			layers.append(block(self.in_channel,channels,stride))
-			self.in_channel = channels
-		return torch.nn.Sequential(*layers)
-	def forward(self,input):
-		output = self.conv1(input)
-		output = self.layer1(output)
-		output = self.layer2(output)
-		output = self.layer3(output)
-		output = self.layer4(output)
-		output = torch.nn.functional.avg_pool2d(output,4)
-		output = output.view(output.size(0),-1)
-		output = self.fc(output)
-		return output
-def RESNet18():
-	return RESNet(BasicBlock)
+def ResNet164():
+    return ResNet(BasicBlock,[18,18,18],[16,32,64],100)
+
 	
 def train(model, data, target, loss_func, optimizer):
 
@@ -116,15 +100,10 @@ def test(model, test_loader, loss_func, use_cuda):
 
 def main():
 
-    num_classes = 10
+    num_classes = 100
     eval_step = 1000
-    num_epochs = 100
+    num_epochs = 200
     batch_size = 64
-    model_name = 'resnet' # resnet, vgg
-    dir_list = ('../data', '../data/MNIST', '../data/CIFAR-10')
-    for directory in dir_list:
-        if not os.path.exists(directory):
-            os.mkdir(directory)
     use_cuda = torch.cuda.is_available()
     train_loader = DataLoader(
         datasets.CIFAR100(root='/home/lianfei/data/CIFAR-100', train=True, download=True,transform=
@@ -145,7 +124,7 @@ def main():
     )
 
     # define network
-    model = RESNet18()
+    model = ResNet164()
     if use_cuda:
         model = model.cuda()
     print(model)
@@ -153,7 +132,7 @@ def main():
     ce_loss = torch.nn.CrossEntropyLoss()
 
     # define optimizer
-    optimizer = optim.SGD(model.parameters(), lr=1e-2,momentum=0.9, weight_decay=5e-4)
+    optimizer = optim.SGD(model.parameters(), lr=1e-3,momentum=0.9, weight_decay=5e-4)
 
     # start train
     viz = visdom.Visdom()

@@ -40,9 +40,9 @@ class BasicBlock(torch.nn.Module):
         output = output*w
         output += short_cut
         return output
-class ResNet(torch.nn.Module):
+class SE_ResNet(torch.nn.Module):
     def __init__(self,block,num_blocks,filter,num_classes = 100):
-        super(ResNet,self).__init__()
+        super(SE_ResNet,self).__init__()
         self.in_channels = 16
         self.conv1 = torch.nn.Conv2d(3,16,kernel_size=3,stride=1,padding=1,bias=False)
         self.layer1 = self.make_layer(BasicBlock,num_blocks[0],filter[0],stride=1)
@@ -69,7 +69,9 @@ class ResNet(torch.nn.Module):
         return output
 
 def ResNet164():
-    return ResNet(BasicBlock,[18,18,18],[16,32,64],100)
+    return SE_ResNet(BasicBlock,[18,18,18],[16,32,64],100)
+
+
 
 	
 def train(model, data, target, loss_func, optimizer):
@@ -106,14 +108,36 @@ def test(model, test_loader, loss_func, use_cuda):
             acc_all += acc
             loss_all += loss
     return acc_all / step, loss_all / step
+def adjust_learning_rate(optimizer,epoch,lr):
+	learning_rate = lr*((0.1**int(epoch>=80))*(0.1**int(epoch>=120)))
+	for param_group in optimizer.param_groups:
+		param_group['lr'] = lr
 
 def main():
-
+    base_lr = 0.01
     num_classes = 100
     eval_step = 1000
-    num_epochs = 100
+    num_epochs = 160
     batch_size = 64
+    resume = False #resume from check point
+    ckpt_path = '/home/lianfei/model_ResNet164/best_ckpt'
+    log_dir = '/home/lianfei/model_ResNet164'
+    # model
+    if resume:
+    	print("==>Resuming from checkpoint..")
+    	assert os.path.isdir(ckpt_path),'Error:checkpoint directory not exists!'
+    	checkpoint = torch.load(os.path.join(ckpt_path,'ckpt.t7'))
+    	model = checkpoint['model']
+    	best_acc = checkpoint['best_acc']
+    	start_epoch = checkpoint['epoch']
+    else:
+    	print("==>Building model..")
+    	model = ResNet164()
+    	start_epoch = 0
     use_cuda = torch.cuda.is_available()
+    if use_cuda:
+    	model = model.cuda()
+    #Load file
     train_loader = DataLoader(
         datasets.CIFAR100(root='/home/lianfei/data/CIFAR-100', train=True, download=True,transform=
                          transforms.Compose([
@@ -132,16 +156,11 @@ def main():
         batch_size=batch_size
     )
 
-    # define network
-    model = ResNet164()
-    if use_cuda:
-        model = model.cuda()
-    print(model)
     # define loss function
     ce_loss = torch.nn.CrossEntropyLoss()
 
     # define optimizer
-    optimizer = optim.SGD(model.parameters(), lr=1e-2,momentum=0.9, weight_decay=5e-4)
+    optimizer = optim.SGD(model.parameters(), lr=base_lr,momentum=0.9, weight_decay=0.0002)
 
     # start train
     viz = visdom.Visdom()
@@ -155,7 +174,9 @@ def main():
             )
         )
     train_step = 0
-    for _ in range(num_epochs):
+    best_acc = 0
+    for epoch in range(num_epochs):
+        adjust_learning_rate(optimizer,epoch+1,base_lr)
         for data, target in train_loader:
             train_step += 1
             if use_cuda:
@@ -169,6 +190,20 @@ def main():
                 acc, loss = test(model, test_loader, ce_loss, use_cuda)
                 test_acc = acc
                 print('\nTest set: Step: {}, Loss: {:.4f}, Accuracy: {:.2f}\n'.format(train_step, loss, acc))
+                state = {
+                	'model':model,
+                	'best_acc':best_acc,
+                	'epoch':epoch,
+                }
+                # save model
+                if not os.path.isdir(os.path.join(log_dir,'last_ckpt')):
+                	os.mkdir(os.path.join(log_dir,'last_ckpt'))
+                torch.save(state,os.path.join(log_dir,'last_ckpt','ckpt.t7'))
+                if acc > best_acc:
+                	best_acc = acc
+                	if not os.path.isdir(os.path.join(log_dir,'best_ckpt')):
+                		os.mkdir(os.path.join(log_dir,'best_ckpt'))
+                	torch.save(state,os.path.join(log_dir,'best_ckpt','ckpt.t7'))
             if train_step % 100 == 0:
                 viz.line(
                     X = np.array([train_step]),
