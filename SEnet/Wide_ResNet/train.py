@@ -72,13 +72,13 @@ def train(epoch):
 		loss.backward()
 		optimizer.step()
 
-		train_loss += loss.data[0]
+		train_loss += loss.data.item()
 		_,predicted = torch.max(outputs.data,1)
 		total += targets.size(0)
 		correct += predicted.eq(targets.data).cpu().sum()
 		print('| Epoch [%3d/%3d] Iter[%3d/%3d]\t\tLoss: %.4f Acc@1: %.3f%%'
                 %(epoch, num_epochs, batch_id+1,
-                    (len(train_data)//batch_size)+1, loss.data[0], 100.*correct/total))
+                    (len(train_data)//batch_size)+1, loss.data.item(), 100.*correct/total))
 def test(epoch):
 	global best_acc
 	net.eval()
@@ -92,12 +92,12 @@ def test(epoch):
 		outputs = net(inputs)
 		loss = criterion(outputs,targets)
 
-		test_loss += loss.data[0]
+		test_loss += loss.data.item()
 		_,predicted = torch.max(outputs.data,1)
 		total += targets.size(0)
 		correct += predicted.eq(targets.data).cpu().sum()
 		acc = 100.*correct/total
-	print("\n| Validation Epoch #%d\t\t\tLoss: %.4f Acc@1: %.2f%%" %(epoch, loss.data[0], acc))
+	print("\n| Validation Epoch #%d\t\t\tLoss: %.4f Acc@1: %.2f%%" %(epoch, loss.data.item(), acc))
 	if acc > best_acc:
 		print("saving model....")
 		state = {
