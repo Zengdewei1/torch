@@ -13,9 +13,11 @@ class BasicBlock(torch.nn.Module):
             torch.nn.BatchNorm2d(in_channels),
             torch.nn.ReLU(),
             torch.nn.Conv2d(in_channels,channels,kernel_size=1,stride=1,padding=0,bias=False),
+            torch.nn.Dropout(p=0.3),
             torch.nn.BatchNorm2d(channels),
             torch.nn.ReLU(),
             torch.nn.Conv2d(channels,channels,kernel_size=3,stride=stride,padding=1,bias=False),
+            torch.nn.Dropout(p=0.3),
             torch.nn.BatchNorm2d(channels),
             torch.nn.ReLU(),
             torch.nn.Conv2d(channels,channels*self.expansion,kernel_size=1,stride=1,bias=False)
@@ -28,13 +30,14 @@ class BasicBlock(torch.nn.Module):
             self.shortCut = torch.nn.Sequential()
         #SE layers
         self.fc1 = torch.nn.Conv2d(channels*self.expansion,channels*self.expansion//16,kernel_size=1)
+        self.dropout = torch.nn.Dropout(p=0.3)
         self.fc2 = torch.nn.Conv2d(channels*self.expansion//16,channels*self.expansion,kernel_size=1)
     def forward(self,input):
         short_cut = self.shortCut(input)
         output = self.residual(input)
         #Squeeze
         w = torch.nn.functional.avg_pool2d(output,output.size(2))
-        w = torch.nn.functional.relu(self.fc1(w))
+        w = self.dropout(torch.nn.functional.relu(self.fc1(w)))
         w = torch.nn.functional.sigmoid(self.fc2(w))
         #Excitation
         output = output*w
@@ -109,7 +112,7 @@ def test(model, test_loader, loss_func, use_cuda):
             loss_all += loss
     return acc_all / step, loss_all / step
 def adjust_learning_rate(optimizer,epoch,lr):
-	learning_rate = lr*((0.1**int(epoch>=80))*(0.1**int(epoch>=120)))
+	learning_rate = lr*((0.1**int(epoch>=40))*(0.1**int(epoch>=60))*(0.5**int(epoch>=80)))
 	for param_group in optimizer.param_groups:
 		param_group['lr'] = lr
 
@@ -118,7 +121,7 @@ def main():
     num_classes = 100
     eval_step = 1000
     num_epochs = 160
-    batch_size = 64
+    batch_size = 32
     resume = False #resume from check point
     ckpt_path = '/home/lianfei/model_ResNet164/best_ckpt'
     log_dir = '/home/lianfei/model_ResNet164'
@@ -176,6 +179,7 @@ def main():
     train_step = 0
     best_acc = 0
     for epoch in range(num_epochs):
+        print(epoch)
         adjust_learning_rate(optimizer,epoch+1,base_lr)
         for data, target in train_loader:
             train_step += 1
