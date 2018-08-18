@@ -13,13 +13,13 @@ parser.add_argument("--lr",default=0.1,type=float,help='basic learning rate')
 parser.add_argument("--depth",default=28,type=int,help='depth of model')
 parser.add_argument("--widen_factor",default=10,type=int,help="width of model")
 parser.add_argument("--dropout_rate",default=0.3,type=float,help='dropout_rate')
-parser.add_argument("--resume","-r",action="store_true",help="Resume from checkPoint")
+parser.add_argument("--resume","-r",default=True,help="Resume from checkPoint")
 args = parser.parse_args()
 
 use_cuda = torch.cuda.is_available()
 best_acc = 0.0
 start_epoch,num_epochs,batch_size,optim = config.start_epoch,config.num_epochs,config.batch_size,config.optim
-
+print(args.resume)
 #Load Data
 print("Data Preparation......")
 transform_train = torchvision.transforms.Compose([
@@ -40,7 +40,7 @@ test_loader = torch.utils.data.DataLoader(test_data,batch_size=32,shuffle=False,
 # Model
 if args.resume:
 	print("Resuming from checkPoint....")
-	assert os.path.isdir("checkPoint"),"Error: No checkPoint directory found!"
+	assert os.path.isdir("checkpoint"),"Error: No checkPoint directory found!"
 	checkPoint = torch.load('./checkpoint/'+'Wide_ResNet.t7')
 	net = checkPoint['net']
 	best_acc = checkPoint['acc']
