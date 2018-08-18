@@ -35,7 +35,7 @@ transform_test = torchvision.transforms.Compose([
 train_data = torchvision.datasets.CIFAR100(root='/home/lianfei/data/CIFAR-100',train=True,download=True,transform=transform_train)
 test_data = torchvision.datasets.CIFAR100(root='/home/lianfei/data/CIFAR-100',train=False,download=True,transform=transform_test)
 train_loader = torch.utils.data.DataLoader(train_data,batch_size=batch_size,shuffle=True,num_workers=1)
-test_loader = torch.utils.data.DataLoader(test_data,batch_size=64,shuffle=False,num_workers=1)
+test_loader = torch.utils.data.DataLoader(test_data,batch_size=32,shuffle=False,num_workers=1)
 
 # Model
 if args.resume:
@@ -87,15 +87,16 @@ def test(epoch):
 	total = 0
 	for batch_idx,(inputs,targets) in enumerate(test_loader):
 		if use_cuda:
-			inputs,targets = torch.autograd.Variable(inputs),torch.autograd.Variable(targets)
-			outputs = net(inputs)
-			loss = criterion(output,targets)
+			inputs,targets = inputs.cuda(),targets.cuda()
+		inputs,targets = torch.autograd.Variable(inputs),torch.autograd.Variable(targets)
+		outputs = net(inputs)
+		loss = criterion(outputs,targets)
 
-			test_loss += loss.data[0]
-			_,predicted = torch.max(outputs.data,1)
-			total += targets.size(0)
-			correct += predicted.eq(targets.data).cpu().sum()
-			acc = 100.*correct/total
+		test_loss += loss.data[0]
+		_,predicted = torch.max(outputs.data,1)
+		total += targets.size(0)
+		correct += predicted.eq(targets.data).cpu().sum()
+		acc = 100.*correct/total
 	print("\n| Validation Epoch #%d\t\t\tLoss: %.4f Acc@1: %.2f%%" %(epoch, loss.data[0], acc))
 	if acc > best_acc:
 		print("saving model....")
