@@ -12,7 +12,7 @@ class wide_basic(torch.nn.Module):
 		self.conv1 = torch.nn.Conv2d(in_planes,planes,kernel_size=3,padding=1,bias=True)
 		self.dropout = torch.nn.Dropout(p=dropout_rate)
 		self.bn2 = torch.nn.BatchNorm2d(planes)
-		self.conv2d = torch.nn.Conv2d(planes,planes,kernel_size=3,stride=stride,padding=1,bias=True)
+		self.conv2 = torch.nn.Conv2d(planes,planes,kernel_size=3,stride=stride,padding=1,bias=True)
 
 		self.shortCut = torch.nn.Sequential()
 		if stride != 1 or in_planes != planes:
@@ -22,7 +22,8 @@ class wide_basic(torch.nn.Module):
 	def forward(self,x):
 		output = self.dropout(self.conv1(torch.nn.functional.relu(self.bn1(x))))
 		output = self.conv2(torch.nn.functional.relu(self.bn2(output)))
-		out += self.shortCut(x)
+		output += self.shortCut(x)
+		return output
 
 class Wide_ResNet(torch.nn.Module):
 	def __init__(self,depth,widen_factor,dropout_rate,num_classes=100):
@@ -30,7 +31,7 @@ class Wide_ResNet(torch.nn.Module):
 		self.in_planes = 16
 
 		assert ((depth-4)%6 == 0),'Wide-ResNet depth should be 6n+4'
-		n = (depth-4)/6
+		n = (depth-4)//6
 		k = widen_factor
 
 		print("Wide_ResNet %dx%d"%(depth,k))
@@ -56,9 +57,9 @@ class Wide_ResNet(torch.nn.Module):
 		output = self.layer1(output)
 		output = self.layer2(output)
 		output = self.layer3(output)
-		output = torch.nn.functional.relu(self.bn(out))
-		output = torch.nn.avg_pool2d(out,8)
-		output = output.view(out.size(0),-1)
+		output = torch.nn.functional.relu(self.bn1(output))
+		output = torch.nn.functional.avg_pool2d(output,8)
+		output = output.view(output.size(0),-1)
 		output = self.fc(output)
 
 		return output
