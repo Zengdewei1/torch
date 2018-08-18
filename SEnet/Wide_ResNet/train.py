@@ -49,10 +49,10 @@ else:
 	print("Building net...")
 	net = wideResNet.Wide_ResNet(args.depth,args.widen_factor,args.dropout_rate,100)
 
-	if use_cuda:
-		net.cuda()
-		net = torch.nn.DataParallel(net,device_ids=range(torch.cuda.device_count()))
-		cudnn.benchmark = True
+if use_cuda:
+	net.cuda()
+	net = torch.nn.DataParallel(net,device_ids=range(torch.cuda.device_count()))
+	cudnn.benchmark = True
 criterion = torch.nn.CrossEntropyLoss()
 
 #Training
